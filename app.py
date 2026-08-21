@@ -102,28 +102,97 @@ ALERT_BADGE = {
     "Due":     '<span class="badge-due">🔴 Due</span>',
     "Overdue": '<span class="badge-overdue">🟣 Overdue</span>',
 }
+# Component type hierarchy — grouped for clarity
+# Piston Assembly
+#   └─ Piston Crown, Piston Ring No.1–4, Piston Rod
+# Fuel Valve Assembly
+#   └─ Fuel Valve, Fuel Valve Nozzle, Fuel Valve Spindle, Fuel Valve Spring
+# Exhaust Valve Assembly
+#   └─ Exhaust Valve, Exhaust Valve Spindle, Exhaust Valve Seat,
+#      Exhaust Valve Bottom Piece, Exhaust Valve Spring
+# Cylinder Assembly
+#   └─ Cylinder Liner, Cylinder Cover, Cylinder Head
+# Bearings
+#   └─ Crosshead Bearing, Con Rod Bearing, Main Bearing, Thrust Bearing
+# Other
+#   └─ Starting Air Valve, Safety Valve, Turbocharger Rotor, Other
+
 COMPONENT_TYPES = [
+    # ── Piston Assembly ───────────────────────────────────────────────────────
     "Piston Crown",
     "Piston Ring No.1",
     "Piston Ring No.2",
     "Piston Ring No.3",
     "Piston Ring No.4",
+    "Piston Rod",
+    # ── Fuel Valve Assembly ───────────────────────────────────────────────────
     "Fuel Valve",
+    "Fuel Valve Nozzle",
+    "Fuel Valve Spindle",
+    "Fuel Valve Spring",
+    "Fuel Valve Seat",
+    # ── Exhaust Valve Assembly ────────────────────────────────────────────────
     "Exhaust Valve",
     "Exhaust Valve Spindle",
     "Exhaust Valve Seat",
     "Exhaust Valve Bottom Piece",
-    "Starting Air Valve",
-    "Safety Valve",
+    "Exhaust Valve Spring",
+    "Exhaust Valve O-Ring Set",
+    # ── Cylinder Assembly ─────────────────────────────────────────────────────
     "Cylinder Liner",
     "Cylinder Cover",
-    "Piston Rod",
+    "Cylinder Head",
+    # ── Bearings ──────────────────────────────────────────────────────────────
     "Crosshead Bearing",
     "Con Rod Bearing",
     "Main Bearing",
+    "Thrust Bearing",
+    # ── Air / Safety Valves ───────────────────────────────────────────────────
+    "Starting Air Valve",
+    "Safety Valve",
+    "Indicator Valve",
+    # ── Turbocharger ─────────────────────────────────────────────────────────
     "Turbocharger Rotor",
+    "Turbocharger Bearing",
+    "Turbocharger Nozzle Ring",
+    # ── Other ─────────────────────────────────────────────────────────────────
     "Other",
 ]
+
+# Type-to-group mapping for display grouping in reports
+COMPONENT_GROUPS = {
+    "Piston Crown":               "Piston Assembly",
+    "Piston Ring No.1":           "Piston Assembly",
+    "Piston Ring No.2":           "Piston Assembly",
+    "Piston Ring No.3":           "Piston Assembly",
+    "Piston Ring No.4":           "Piston Assembly",
+    "Piston Rod":                 "Piston Assembly",
+    "Fuel Valve":                 "Fuel Valve Assembly",
+    "Fuel Valve Nozzle":          "Fuel Valve Assembly",
+    "Fuel Valve Spindle":         "Fuel Valve Assembly",
+    "Fuel Valve Spring":          "Fuel Valve Assembly",
+    "Fuel Valve Seat":            "Fuel Valve Assembly",
+    "Exhaust Valve":              "Exhaust Valve Assembly",
+    "Exhaust Valve Spindle":      "Exhaust Valve Assembly",
+    "Exhaust Valve Seat":         "Exhaust Valve Assembly",
+    "Exhaust Valve Bottom Piece": "Exhaust Valve Assembly",
+    "Exhaust Valve Spring":       "Exhaust Valve Assembly",
+    "Exhaust Valve O-Ring Set":   "Exhaust Valve Assembly",
+    "Cylinder Liner":             "Cylinder Assembly",
+    "Cylinder Cover":             "Cylinder Assembly",
+    "Cylinder Head":              "Cylinder Assembly",
+    "Crosshead Bearing":          "Bearings",
+    "Con Rod Bearing":            "Bearings",
+    "Main Bearing":               "Bearings",
+    "Thrust Bearing":             "Bearings",
+    "Starting Air Valve":         "Air & Safety Valves",
+    "Safety Valve":               "Air & Safety Valves",
+    "Indicator Valve":            "Air & Safety Valves",
+    "Turbocharger Rotor":         "Turbocharger",
+    "Turbocharger Bearing":       "Turbocharger",
+    "Turbocharger Nozzle Ring":   "Turbocharger",
+    "Other":                      "Other",
+}
 CONDITIONS = ["New","Original","Reconditioned"]
 STATUSES   = ["In Service","Onboard Spare","Landed Ashore",
               "Under Reconditioning","Scrapped"]
@@ -683,10 +752,26 @@ def show_main_app(vessel):
         with tab_list:
             comp_df = reports.full_component_df()
             if not comp_df.empty:
+                # Add group column
+                comp_df.insert(1, "Group",
+                    comp_df["Type"].map(COMPONENT_GROUPS).fillna("Other"))
+
+                # Group filter
+                all_groups = ["All Groups"] + sorted(comp_df["Group"].unique().tolist())
+                filter_group = st.selectbox("Filter by Assembly Group", all_groups,
+                                            key="comp_group_filter")
+                if filter_group != "All Groups":
+                    comp_df = comp_df[comp_df["Group"] == filter_group]
+
+                st.caption(
+                    f"Showing {len(comp_df)} component(s) | "
+                    f"Current ME RH = {fmt(current_me_rh_cm)}"
+                )
+
                 def hl(val):
-                    m = {"OK": "background-color:#dcfce7;color:#166534",
+                    m = {"OK":      "background-color:#dcfce7;color:#166534",
                          "Warning": "background-color:#fef9c3;color:#854d0e",
-                         "Due": "background-color:#fee2e2;color:#991b1b",
+                         "Due":     "background-color:#fee2e2;color:#991b1b",
                          "Overdue": "background-color:#ede9fe;color:#5b21b6"}
                     return m.get(val, "")
                 try:
@@ -694,12 +779,8 @@ def show_main_app(vessel):
                 except AttributeError:
                     styled = comp_df.style.applymap(hl, subset=["Alert"])
                 st.dataframe(styled, use_container_width=True, hide_index=True)
-                st.caption(
-                    f"Live Total RH for in-service components includes hours since last fitting. "
-                    f"Current ME RH = {fmt(current_me_rh_cm)}"
-                )
             else:
-                st.info("No components found.")
+                st.info("No components found. Use 'Add Component' to register components.")
 
         # ── Add Component ─────────────────────────────────────────────────────
         with tab_add:
@@ -722,7 +803,9 @@ def show_main_app(vessel):
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     nc_id   = st.text_input("Component ID *", placeholder="6033-1")
-                    nc_type = st.selectbox("Component Type", COMPONENT_TYPES)
+                    nc_type = st.selectbox("Component Type", COMPONENT_TYPES,
+                                           help="Select the component type. "
+                                                "Fuel Valve / Exhaust Valve assemblies are listed below Piston types.")
                     nc_cond = st.selectbox("Condition", CONDITIONS)
                 with col2:
                     nc_stat = st.selectbox("Status", STATUSES, index=1)
